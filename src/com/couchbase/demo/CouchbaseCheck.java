@@ -2,10 +2,12 @@ package com.couchbase.demo;
 
 import com.couchbase.client.CouchbaseClient;
 import java.io.IOException;
+import java.net.SocketAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -34,8 +36,8 @@ public class CouchbaseCheck {
             runningTime = Integer.parseInt(args[0]);
             iterationsPerThread = Integer.parseInt(args[1]);
         } else if (args.length > 2) {
-            uriArgs = new String[args.length - 1];
-            System.arraycopy(args, 1, uriArgs, 0, args.length - 1);
+            uriArgs = new String[args.length - 2];
+            System.arraycopy(args, 2, uriArgs, 0, args.length - 2);
         }
 
         List<URI> servers = new ArrayList<URI>();
@@ -96,6 +98,23 @@ public class CouchbaseCheck {
 
         threadPool.awaitTermination(time, TimeUnit.SECONDS);
         threadPool.shutdown();
+//        Map<SocketAddress, Map<String, String>> stats = cbc.getStats("timings");
+//
+//        StringBuilder statsString = new StringBuilder();
+//
+//        for ( Map.Entry<SocketAddress, Map<String,String>> node: stats.entrySet()) {
+//             statsString.append("For node ").append(node.getKey()).append("\n");
+//             for (Map.Entry<String,String> stat : node.getValue().entrySet()) {
+//                 statsString.append("stat ").append(stat.getKey());
+//                 statsString.append(" value ").append(stat.getValue()).append("\n");
+//             }
+//
+//        }
+//
+//        Logger.getLogger(SleepingTester.class.getName()).log(Level.INFO,
+//                "Server timing stats are: " + statsString);
+
+
         cbc.shutdown(10, TimeUnit.SECONDS);
 
     }
