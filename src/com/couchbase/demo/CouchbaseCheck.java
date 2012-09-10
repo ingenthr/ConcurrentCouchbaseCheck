@@ -1,13 +1,12 @@
 package com.couchbase.demo;
 
 import com.couchbase.client.CouchbaseClient;
+import com.couchbase.client.CouchbaseConnectionFactoryBuilder;
 import java.io.IOException;
-import java.net.SocketAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -24,80 +23,97 @@ import java.util.logging.Logger;
  */
 public class CouchbaseCheck {
 
-    /**
-     * @param args the command line arguments
-     */
-    public static void main(String[] args) throws URISyntaxException, IOException, InterruptedException, ExecutionException {
-        CouchbaseCheck tester = new CouchbaseCheck();
-        String uriArgs[] = {"localhost"};
-        int runningTime = 45;
-        int iterationsPerThread = 101;
-        if (args.length == 1) {
-            runningTime = Integer.parseInt(args[0]);
-            iterationsPerThread = Integer.parseInt(args[1]);
-        } else if (args.length > 2) {
-            uriArgs = new String[args.length - 2];
-            System.arraycopy(args, 2, uriArgs, 0, args.length - 2);
-        }
-
-        List<URI> servers = new ArrayList<URI>();
-        for (String arg : uriArgs) {
-            servers.add(new URI("http://" + arg + ":8091/pools"));
-        }
-
-        tester.testThem(servers, runningTime, iterationsPerThread);
+  /**
+   * @param args the command line arguments
+   */
+  public static void main(String[] args) throws URISyntaxException, IOException, InterruptedException, ExecutionException {
+    CouchbaseCheck tester = new CouchbaseCheck();
+    String uriArgs[] = {"localhost"};
+    int runningTime = 45;
+    int iterationsPerThread = 101;
+    if (args.length >= 1) {
+      runningTime = Integer.parseInt(args[0]);
+      iterationsPerThread = Integer.parseInt(args[0]);
+    }
+    if (args.length >= 2) {
+      uriArgs = new String[args.length - 2];
+      System.arraycopy(args, 2, uriArgs, 0, args.length - 2);
     }
 
-    public void testThem(List<URI> servers, int time, int iterations) throws IOException, InterruptedException, ExecutionException {
+    List<URI> servers = new ArrayList<URI>();
+    for (String arg : uriArgs) {
+      servers.add(new URI("http://" + arg + ":8091/pools"));
+    }
 
-        // Tell spy to use the SunLogger
-        Properties systemProperties = System.getProperties();
-        systemProperties.put("net.spy.log.LoggerImpl", "net.spy.memcached.compat.log.SunLogger");
-        System.setProperties(systemProperties);
+    tester.testThem(servers, runningTime, iterationsPerThread);
+  }
 
-        Logger.getLogger("net.spy.memcached").setLevel(Level.ALL);
+  public void testThem(List<URI> servers, int time, int iterations) throws IOException, InterruptedException, ExecutionException {
 
-        //get the top Logger
-        Logger topLogger = java.util.logging.Logger.getLogger("");
+    // Tell spy to use the SunLogger
+    Properties systemProperties = System.getProperties();
+    systemProperties.put("net.spy.log.LoggerImpl", "net.spy.memcached.compat.log.SunLogger");
+    System.setProperties(systemProperties);
 
-        // Handler for console (reuse it if it already exists)
-        Handler consoleHandler = null;
-        //see if there is already a console handler
-        for (Handler handler : topLogger.getHandlers()) {
-            if (handler instanceof ConsoleHandler) {
-                //found the console handler
-                consoleHandler = handler;
-                break;
-            }
-        }
+    Logger.getLogger("net.spy.memcached").setLevel(Level.ALL);
 
-        if (consoleHandler == null) {
-            //there was no console handler found, create a new one
-            consoleHandler = new ConsoleHandler();
-            topLogger.addHandler(consoleHandler);
-        }
+    //get the top Logger
+    Logger topLogger = java.util.logging.Logger.getLogger("");
 
-        //set the console handler to fine:
-        consoleHandler.setLevel(java.util.logging.Level.CONFIG);
+    // Handler for console (reuse it if it already exists)
+    Handler consoleHandler = null;
+    //see if there is already a console handler
+    for (Handler handler : topLogger.getHandlers()) {
+      if (handler instanceof ConsoleHandler) {
+        //found the console handler
+        consoleHandler = handler;
+        break;
+      }
+    }
 
-        long preconnect = System.nanoTime();
-        CouchbaseClient cbc = new CouchbaseClient(servers, "default", "");
-        long postconnect = System.nanoTime();
-        long connectTime = postconnect - preconnect;
-        Logger.getLogger(SleepingTester.class.getName()).log(Level.INFO,
-                "Took " + (double) connectTime / 1000000.0 + "ms to connect.");
+    if (consoleHandler == null) {
+      //there was no console handler found, create a new one
+      consoleHandler = new ConsoleHandler();
+      topLogger.addHandler(consoleHandler);
+    }
+
+    //set the console handler to fine:
+    consoleHandler.setLevel(java.util.logging.Level.CONFIG);
+
+    long preconnect = System.nanoTime();
+//        CouchbaseClient cbc = new CouchbaseClient(servers, "default", "");
+    CouchbaseConnectionFactoryBuilder cfb = new CouchbaseConnectionFactoryBuilder();
+    cfb.setObsPollInterval(60); // poll every 60ms during observe
+    cfb.setObsPollMax(10000);      // poll up to 10000 times for a total of 10 minutes
+
+    CouchbaseClient cbc = new CouchbaseClient(cfb.buildCouchbaseConnection(servers, "default", ""));
+
+    long postconnect = System.nanoTime();
+    long connectTime = postconnect - preconnect;
+    Logger.getLogger(CouchbaseCheck.class.getName()).log(Level.INFO,
+            "Took " + (double) connectTime / 1000000.0 + "ms to connect.");
 
 
-        ExecutorService threadPool = Executors.newFixedThreadPool(10);
-        // TODO: make the threads run forever and report on threadpool shutdown
-        threadPool.submit(new SleepingTester(cbc, 101));
-        threadPool.submit(new SleepingTester(cbc, 101));
-        threadPool.submit(new SleepingTester(cbc, 101));
-        threadPool.submit(new SleepingTester(cbc, 101));
-        threadPool.submit(new SleepingTester(cbc, 101));
+    ExecutorService threadPool = Executors.newFixedThreadPool(10);
+    // TODO: make the threads run forever and report on threadpool shutdown
+    threadPool.submit(new ObserveTester(cbc, 2000));
+    threadPool.submit(new ObserveTester(cbc, 2000));
+    threadPool.submit(new ObserveTester(cbc, 2000));
+    threadPool.submit(new ObserveTester(cbc, 2000));
+    threadPool.submit(new ObserveTester(cbc, 2000));
+    threadPool.submit(new ObserveTester(cbc, 2000));
+    threadPool.submit(new ObserveTester(cbc, 2000));
+    threadPool.submit(new ObserveTester(cbc, 2000));
+    threadPool.submit(new ObserveTester(cbc, 2000));
+    threadPool.submit(new ObserveTester(cbc, 2000));
+    threadPool.submit(new ObserveTester(cbc, 2000));
 
-        threadPool.awaitTermination(time, TimeUnit.SECONDS);
-        threadPool.shutdown();
+
+
+    Logger.getLogger(CouchbaseCheck.class.getName()).log(Level.INFO,
+            "Started threads, will shut down in " + time + " seconds.");
+    threadPool.awaitTermination(time, TimeUnit.SECONDS);
+    threadPool.shutdown();
 //        Map<SocketAddress, Map<String, String>> stats = cbc.getStats("timings");
 //
 //        StringBuilder statsString = new StringBuilder();
@@ -115,7 +131,7 @@ public class CouchbaseCheck {
 //                "Server timing stats are: " + statsString);
 
 
-        cbc.shutdown(10, TimeUnit.SECONDS);
+    cbc.shutdown(10, TimeUnit.MINUTES);
 
-    }
+  }
 }
